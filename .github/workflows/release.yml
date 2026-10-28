@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate tag version
+        id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          package_version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' Cargo.toml | head -n 1)"
+          [[ "$version" == "$package_version" ]] || {
+            echo "Tag version '$version' does not match Cargo.toml version '$package_version'." >&2
+            exit 1
+          }
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-test
+          cache-on-failure: true
+
+      - name: Run tests
+        run: cargo test --locked
+
+  create-draft:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create or retain draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: [test, create-draft]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: linux-x86_64-musl
+            package: musl-tools
+            extension: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64-msvc
+            package: ""
+            extension: .exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: macos-aarch64
+            package: ""
+            extension: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+          cache-on-failure: true
+
+      - name: Install cross-linker
+        if: matrix.package != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ${{ matrix.package }}
+
+      - name: Build release binary
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
+      - name: Stage release binary
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: input-pulse-${{ needs.test.outputs.version }}-${{ matrix.asset }}
+          EXTENSION: ${{ matrix.extension }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          binary="target/${TARGET}/release/input-pulse${EXTENSION}"
+          asset="dist/${ASSET}${EXTENSION}"
+          cp "$binary" "$asset"
+          test -s "$asset"
+
+      - name: Upload raw release binary
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: true
+          files: dist/input-pulse-${{ needs.test.outputs.version }}-${{ matrix.asset }}${{ matrix.extension }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  licenses:
+    needs: [test, create-draft]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-test
+          cache-all-crates: true
+          cache-on-failure: true
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about@0.9.2
+
+      - name: Initialize cargo-about and generate HTML report
+        run: |
+          set -euo pipefail
+          cargo about init --overwrite
+          cat > about.toml <<'EOF'
+          accepted = ["Apache-2.0", "MIT", "Unicode-3.0"]
+          targets = [
+              "x86_64-unknown-linux-musl",
+              "x86_64-pc-windows-msvc",
+              "aarch64-apple-darwin",
+          ]
+
+          [private]
+          ignore = true
+          EOF
+          mkdir -p dist
+          cargo fetch --locked
+          cargo about generate about.hbs --locked \
+            --output-file dist/THIRD-PARTY-LICENSES.html
+
+      - name: Upload license report to draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: true
+          files: |
+            dist/THIRD-PARTY-LICENSES.html
+            LICENSE
+          fail_on_unmatched_files: true
+          overwrite_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: [create-draft, build, licenses]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish completed draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
