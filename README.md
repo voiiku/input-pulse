@@ -1,6 +1,7 @@
 # Input Pulse
 
-Input Pulse is a Rust CLI and library that sends input to matching windows or GNU screen sessions at regular intervals.
+Input Pulse is a CLI and library that sends input to targets at regular intervals.
+![Window](/docs/assets/demo1.gif) 
 
 Window input does not intentionally activate the target.
 Applications may ignore synthetic input, so successful dispatch does not guarantee receipt.
