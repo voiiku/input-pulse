@@ -23,7 +23,7 @@ pub enum TargetMode {
 ///
 /// Input settings must be supplied explicitly; this type does not implement
 /// [`Default`]. CLI process options default to `false` in [`Self::new`] and
-/// are not acted on by the library's [`crate::run`] function.
+/// are not acted on by the library's [`crate::InputPulse`] worker.
 ///
 /// ```compile_fail
 /// use input_pulse::InputPulseConfig;
@@ -46,10 +46,10 @@ pub struct InputPulseConfig {
     pub execution_interval_seconds: u64,
     /// Delay after each key action and text character, in seconds.
     pub input_delay_seconds: f64,
-    /// Request CLI help; [`crate::run`] does not interpret this field. The CLI
+    /// Request CLI help; [`crate::InputPulse`] does not interpret this field. The CLI
     /// can use a non-runnable help-only configuration when no target is supplied.
     pub help: bool,
-    /// Request CLI background execution; [`crate::run`] does not interpret this field.
+    /// Request CLI background execution; [`crate::InputPulse`] does not interpret this field.
     pub background: bool,
 }
 
@@ -58,8 +58,8 @@ impl InputPulseConfig {
     /// The CLI-only `help` and `background` flags are initialized to `false`.
     ///
     /// This does not check platform prerequisites. Since fields are public,
-    /// call [`Self::validate`] again after changing them; [`crate::run`] also
-    /// validates before running.
+    /// call [`Self::validate`] again after changing them; [`crate::InputPulse::new`]
+    /// also validates before storing the configuration.
     ///
     /// ```
     /// use input_pulse::{InputPulseConfig, TargetMode};

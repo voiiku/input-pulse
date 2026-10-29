@@ -1,4 +1,4 @@
-use input_pulse::{InputPulseConfig, TargetMode};
+use input_pulse::{InputPulse, InputPulseConfig, TargetMode};
 
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
@@ -16,5 +16,7 @@ fn main() -> Result<(), String> {
         60,
         0.05,
     )?;
-    input_pulse::run(config, |_| {})
+    let mut pulse = InputPulse::new(config)?;
+    pulse.start(|_| {})?;
+    pulse.wait()
 }

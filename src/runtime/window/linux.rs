@@ -348,6 +348,7 @@ mod tests {
             &windows,
             &[InputAction::Text("ab".into())],
             Duration::ZERO,
+            &crate::StopToken::new(),
             &mut |event| events.push(event),
         )
         .unwrap();

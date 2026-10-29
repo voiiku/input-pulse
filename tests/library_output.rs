@@ -1,6 +1,6 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 
-use input_pulse::{InputPulseConfig, RunEvent, TargetMode};
+use input_pulse::{InputPulse, InputPulseConfig, RunEvent, TargetMode};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -61,7 +61,7 @@ case "$1" in
     -S)
         printf '%s\n' '{DELIVERY_STDOUT}'
         printf '%s\n' '{DELIVERY_STDERR}' >&2
-        if [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "delivery_success" ]; then exit 0; fi
+        if [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "delivery_success" ] || [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "waiting_stop" ]; then exit 0; fi
         exit 8
         ;;
     *) exit 9 ;;
@@ -83,6 +83,7 @@ esac
         "version_failure",
         "delivery_failure",
         "delivery_success",
+        "waiting_stop",
         "list_failure",
     ] {
         let output = Command::new(std::env::current_exe().unwrap())
@@ -197,31 +198,66 @@ fn run_probe(mode: &str) {
         0.05,
     )
     .unwrap();
-    let mut events = Vec::new();
-    if mode == "delivery_success" {
-        struct StopProbe;
-        let hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
-        let stopped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            input_pulse::run(config, |event| {
-                let complete = matches!(event, RunEvent::CommandComplete);
+    let mut pulse = InputPulse::new(config).unwrap();
+    assert!(!pulse.is_running());
+    pulse.stop().unwrap();
+    if matches!(mode, "delivery_success" | "waiting_stop") {
+        for _ in 0..2 {
+            let (send, receive) = std::sync::mpsc::channel();
+            pulse.start(move |event| send.send(event).unwrap()).unwrap();
+            assert!(pulse.is_running());
+            assert!(pulse.start(|_| {}).is_err());
+            let mut events = Vec::new();
+            loop {
+                let event = receive
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
+                let should_stop = matches!(
+                    (mode, &event),
+                    ("delivery_success", RunEvent::CommandComplete)
+                        | ("waiting_stop", RunEvent::Waiting { .. })
+                );
                 events.push(event);
-                if complete {
-                    std::panic::panic_any(StopProbe);
+                if should_stop {
+                    break;
                 }
-            })
-        }));
-        std::panic::set_hook(hook);
-        match stopped {
-            Err(payload) => assert!(payload.is::<StopProbe>()),
-            Ok(result) => panic!("run returned unexpectedly: {result:?}"),
+            }
+            let stopping = std::time::Instant::now();
+            pulse.stop().unwrap();
+            assert!(stopping.elapsed() < std::time::Duration::from_secs(2));
+            assert!(!pulse.is_running());
+            pulse.stop().unwrap();
+            pulse.wait().unwrap();
+            events.extend(receive.try_iter());
+            assert!(events.contains(&RunEvent::Started));
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(event, RunEvent::CommandComplete))
+                    .count(),
+                1
+            );
+            if mode == "waiting_stop" {
+                assert!(
+                    events
+                        .iter()
+                        .any(|event| matches!(event, RunEvent::Waiting { .. }))
+                );
+            }
         }
-        assert!(events.contains(&RunEvent::Started));
-        assert!(events.contains(&RunEvent::CommandComplete));
         return;
     }
 
-    let error = input_pulse::run(config, |event| events.push(event)).unwrap_err();
+    let (send, receive) = std::sync::mpsc::channel();
+    let start = pulse.start(move |event| send.send(event).unwrap());
+    let error = if mode == "version_failure" {
+        start.unwrap_err()
+    } else {
+        start.unwrap();
+        pulse.wait().unwrap_err()
+    };
+    assert!(!pulse.is_running());
+    let events: Vec<_> = receive.try_iter().collect();
     match mode {
         "version_failure" => {
             assert!(error.contains(VERSION_STDOUT));

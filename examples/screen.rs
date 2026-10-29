@@ -1,4 +1,4 @@
-use input_pulse::{InputPulseConfig, RunEvent, TargetMode};
+use input_pulse::{InputPulse, InputPulseConfig, RunEvent, TargetMode};
 
 fn main() -> Result<(), String> {
     let mut args = std::env::args().skip(1);
@@ -16,8 +16,10 @@ fn main() -> Result<(), String> {
         60,
         0.05,
     )?;
-    input_pulse::run(config, |event| match event {
+    let mut pulse = InputPulse::new(config)?;
+    pulse.start(|event| match event {
         RunEvent::CommandComplete => println!("Input dispatched."),
         other => println!("{other:?}"),
-    })
+    })?;
+    pulse.wait()
 }

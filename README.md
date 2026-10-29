@@ -68,18 +68,31 @@ input-pulse = { version = "0.1.0", default-features = false }
 ```
 
 ```rust
-use input_pulse::{InputPulseConfig, TargetMode};
+use input_pulse::{InputPulse, InputPulseConfig, TargetMode};
 
 fn main() -> Result<(), String> {
     let config = InputPulseConfig::new(
         TargetMode::Window, "Example Editor", "hello", 60, 0.05,
     )?;
-    input_pulse::run(config, |_| {})
+    let mut pulse = InputPulse::new(config)?;
+    pulse.start(|_| {})?;
+
+    // When the host wants to stop:
+    pulse.stop()
 }
 ```
 
 `InputPulseConfig::new` requires all input settings.
-`run` blocks and reports progress through the callback without writing to stdout or stderr.
+`start(on_event)` launches a background worker; callbacks must be `Send + 'static`.
+Use `|_| {}` to ignore events. The library does not write to stdout or stderr.
+`is_running()` reports thread liveness, not successful input delivery.
+
+`stop()` wakes interval waits, finishes the current target's input, and joins the worker.
+`wait()` joins without requesting a stop, for foreground use.
+Both return worker errors or panics; call either before restarting or dropping the object.
+Dropping only requests a stop without waiting. System calls and callbacks cannot be
+interrupted, so stopping may take time; use a blocking task in async hosts.
+
 The `help` and `background` fields are CLI-only.
 See the runnable [window](examples/window.rs) and [screen](examples/screen.rs) examples.
 

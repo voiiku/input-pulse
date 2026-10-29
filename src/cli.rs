@@ -1,7 +1,7 @@
 mod parse;
 mod report;
 
-use input_pulse::{InputPulseConfig, TargetMode};
+use input_pulse::{InputPulse, InputPulseConfig, TargetMode};
 use parse::parse_cli_arguments;
 use std::process::{Command, Stdio};
 
@@ -35,7 +35,9 @@ pub fn run() -> Result<(), String> {
         input_pulse::check_platform_support(config.target_mode)?;
         start_background(&config)?;
     } else {
-        input_pulse::run(config, report::show_event)?;
+        let mut pulse = InputPulse::new(config)?;
+        pulse.start(report::show_event)?;
+        pulse.wait()?;
     }
     Ok(())
 }
