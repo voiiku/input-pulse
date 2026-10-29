@@ -64,7 +64,7 @@ Add the library without CLI dependencies:
 
 ```toml
 [dependencies]
-input-pulse = { version = "0.1.0", default-features = false }
+input-pulse = { version = "0.1.1", default-features = false }
 ```
 
 ```rust
