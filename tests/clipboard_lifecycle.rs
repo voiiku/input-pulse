@@ -56,7 +56,7 @@ case "$1" in
         case "$count" in
             1) printf 'No Sockets found in test directory.\n'; exit 1 ;;
             2|3)
-                printf 'There are screens on:\n\t101.ip-test-one\t(Detached)\n\t102.ip-test-two\t(Detached)\n'
+                printf 'There are screens on:\n\t101.ip-test-one\t(10/29/2026 09:11:12 PM)\t(Detached)\n\t102.ip-test-two\t(Detached)\n'
                 exit 0
                 ;;
             *) printf 'stop after test cycles\n' >&2; exit 2 ;;

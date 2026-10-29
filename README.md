@@ -21,6 +21,8 @@ Window input varies by platform:
 - **Linux:** Window mode requires X11; see [X11 and SSH](#x11-and-ssh).
 
 The `screen` target requires GNU screen and works without a graphical session on macOS and Linux.
+Session discovery supports `screen -list` output with or without timestamps; unrecognized output is reported as an error.
+Avoid session names ending in a tab followed by a timestamp-like field, which `screen -list` cannot distinguish from a timestamp.
 
 ## Installation
 

@@ -56,9 +56,21 @@ case "$1" in
             printf '%s\n' '{LIST_ERROR}'
             exit 1
         fi
-        printf 'There are screens on:\n\t123.input-pulse-output-test\t(Detached)\n'
+        if [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "unrecognized_list" ]; then
+            printf 'unrecognized screen output\n'
+            exit 0
+        fi
+        if [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "invalid_utf8_list" ]; then
+            printf '\377\n'
+            exit 0
+        fi
+        printf 'There are screens on:\n\t123.input-pulse-output-test\t(10/29/2026 09:11:12 PM)\t(Detached)\n'
         ;;
     -S)
+        if [ "$2" != "123.input-pulse-output-test" ]; then
+            printf 'unexpected session ID: %s\n' "$2" >&2
+            exit 13
+        fi
         printf '%s\n' '{DELIVERY_STDOUT}'
         printf '%s\n' '{DELIVERY_STDERR}' >&2
         if [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "delivery_success" ] || [ "$INPUT_PULSE_LIBRARY_OUTPUT_TEST_MODE" = "waiting_stop" ]; then exit 0; fi
@@ -85,6 +97,8 @@ esac
         "delivery_success",
         "waiting_stop",
         "list_failure",
+        "unrecognized_list",
+        "invalid_utf8_list",
     ] {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
@@ -273,6 +287,17 @@ fn run_probe(mode: &str) {
         }
         "list_failure" => {
             assert!(error.contains(LIST_ERROR));
+            assert!(events.contains(&RunEvent::Started));
+            assert!(!events.contains(&RunEvent::NoTargetFound));
+        }
+        "unrecognized_list" => {
+            assert!(error.contains("unrecognized GNU screen session list"));
+            assert!(error.contains("unrecognized screen output"));
+            assert!(events.contains(&RunEvent::Started));
+            assert!(!events.contains(&RunEvent::NoTargetFound));
+        }
+        "invalid_utf8_list" => {
+            assert!(error.contains("GNU screen session list was not valid UTF-8"));
             assert!(events.contains(&RunEvent::Started));
             assert!(!events.contains(&RunEvent::NoTargetFound));
         }
